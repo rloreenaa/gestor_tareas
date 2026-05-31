@@ -1,64 +1,63 @@
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
 from django.shortcuts import get_object_or_404
 from .models import TaskList, Task
+from .serializers import TaskListSerializer, TaskSerializer
 
 
-@csrf_exempt
+@api_view(['GET', 'POST'])
 def task_lists(request):
     if request.method == 'GET':
-        lists = TaskList.objects.all().values('id', 'name', 'created_at')
-        return JsonResponse(list(lists), safe=False)
+        lists = TaskList.objects.all()
+        serializer = TaskListSerializer(lists, many=True)
+        return Response(serializer.data)
 
     elif request.method == 'POST':
-        data = json.loads(request.body)
-        task_list = TaskList.objects.create(name=data['name'])
-        return JsonResponse({'id': task_list.id, 'name': task_list.name}, status=201)
+        serializer = TaskListSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    return JsonResponse({'error': 'Método no permitido'}, status=405)
 
-
-@csrf_exempt
+@api_view(['DELETE'])
 def task_list_detail(request, list_id):
-    task_list = get_object_or_404(TaskList, id=list_id)
-
-    if request.method == 'DELETE':
-        task_list.delete()
-        return JsonResponse({'message': 'Lista eliminada'}, status=200)
-
-    return JsonResponse({'error': 'Método no permitido'}, status=405)
+    task_list = get_object_or_404(TaskList, pk=list_id)
+    task_list.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@csrf_exempt
+@api_view(['GET', 'POST'])
 def tasks(request, list_id):
-    task_list = get_object_or_404(TaskList, id=list_id)
+    task_list = get_object_or_404(TaskList, pk=list_id)
 
     if request.method == 'GET':
-        tasks = task_list.tasks.all().values('id', 'title', 'completed', 'created_at')
-        return JsonResponse(list(tasks), safe=False)
+        tasks = Task.objects.filter(task_list=task_list)
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
 
     elif request.method == 'POST':
-        data = json.loads(request.body)
-        task = Task.objects.create(title=data['title'], task_list=task_list)
-        return JsonResponse({'id': task.id, 'title': task.title, 'completed': task.completed}, status=201)
+        data = request.data.copy()
+        data['task_list'] = list_id
+        serializer = TaskSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    return JsonResponse({'error': 'Método no permitido'}, status=405)
 
-
-@csrf_exempt
+@api_view(['PATCH', 'DELETE'])
 def task_detail(request, list_id, task_id):
-    task_list = get_object_or_404(TaskList, id=list_id)
-    task = get_object_or_404(Task, id=task_id, task_list=task_list)
+    task = get_object_or_404(Task, pk=task_id, task_list_id=list_id)
 
     if request.method == 'PATCH':
-        data = json.loads(request.body)
-        task.completed = data.get('completed', task.completed)
-        task.save()
-        return JsonResponse({'id': task.id, 'title': task.title, 'completed': task.completed})
+        serializer = TaskSerializer(task, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
         task.delete()
-        return JsonResponse({'message': 'Tarea eliminada'}, status=200)
-
-    return JsonResponse({'error': 'Método no permitido'}, status=405)
+        return Response(status=status.HTTP_204_NO_CONTENT)
